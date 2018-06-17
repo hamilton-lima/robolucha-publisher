@@ -15,7 +15,7 @@ func main() {
 		http.ServeFile(c.Writer, c.Request, "index.html")
 	})
 
-	r.GET("/ws", func(c *gin.Context) {
+	r.GET("/message", func(c *gin.Context) {
 		m.HandleRequest(c.Writer, c.Request)
 	})
 
@@ -23,5 +23,6 @@ func main() {
 		m.Broadcast(msg)
 	})
 
+	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
 }
