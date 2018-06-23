@@ -25,15 +25,17 @@ func main() {
 		m.Broadcast(msg)
 	})
 
-	var redis = redislistener.NewRedisListener().Subscribe("c1", func(message []byte) {
+	var redis = redislistener.NewRedisListener().SetDebugger(true)
+
+	redis.Subscribe("c1", func(message []byte) {
 		fmt.Printf("message: %v \n", message)
 	}).Subscribe("c2", func(message []byte) {
 		fmt.Printf("message (c2) : %v \n", message)
-	}).Connect()
+	})
+
+	redis.Connect()
 
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
-
-	<-redis.Ready()
 
 }

@@ -8,13 +8,24 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
+// TODO: replace by logger
+func (listener *RedisListener) print(params []interface{}) {
+	fmt.Print("[redislistener] ")
+	for _, line := range params {
+		fmt.Printf("%v ", line)
+	}
+	fmt.Print("\n")
+}
+
 func (listener *RedisListener) log(params ...interface{}) {
-	if listener.verbose {
-		fmt.Print("[redislistener] ")
-		for _, line := range params {
-			fmt.Printf("%v ", line)
-		}
-		fmt.Print("\n")
+	if listener.isVerbose {
+		listener.print(params)
+	}
+}
+
+func (listener *RedisListener) debug(params ...interface{}) {
+	if listener.isDebug {
+		listener.print(params)
 	}
 }
 
@@ -31,9 +42,9 @@ type RedisListener struct {
 	readTimeout       time.Duration
 	writeTimeout      time.Duration
 	healtCheckTimeout time.Duration
-	ready             chan bool
 	lastError         error
-	verbose           bool
+	isVerbose         bool
+	isDebug           bool
 }
 
 // NewRedisListener creates a new RedisListener
@@ -44,23 +55,25 @@ func NewRedisListener() *RedisListener {
 	result.healtCheckTimeout = time.Minute
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
 	result.writeTimeout = 10 * time.Second
-	result.verbose = true
+	result.isVerbose = true
+	result.isDebug = false
 
-	result.ready = make(chan bool)
 	result.log("created", result.serverAddr)
 
 	return &result
-}
-
-// Ready readonly channel
-func (listener *RedisListener) Ready() <-chan bool {
-	return listener.ready
 }
 
 // Subscribe adds OnMessageHandler for one channel
 func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandler) *RedisListener {
 	listener.log("subscribe", channel)
 	listener.subscribers[channel] = append(listener.subscribers[channel], handler)
+	return listener
+}
+
+// SetDebugger change isDebug setting
+func (listener *RedisListener) SetDebugger(isDebug bool) *RedisListener {
+	listener.log("SetDebugger", isDebug)
+	listener.isDebug = isDebug
 	return listener
 }
 
@@ -85,7 +98,6 @@ func (listener *RedisListener) Connect() *RedisListener {
 		redis.DialWriteTimeout(listener.writeTimeout))
 
 	if listener.lastError != nil {
-		listener.ready <- false
 		listener.log("connect error", listener.lastError)
 		return listener
 	}
@@ -95,7 +107,6 @@ func (listener *RedisListener) Connect() *RedisListener {
 
 	if listener.lastError != nil {
 		listener.log("listen error", listener.lastError)
-		listener.ready <- false
 		return listener
 	}
 
@@ -120,9 +131,9 @@ func listen(listener *RedisListener) {
 	listener.log("listen start")
 
 	for {
-		listener.log("before receive")
+		listener.log("waiting for redis")
 		var input interface{} = listener.client.Receive()
-		listener.log("before the switch", input)
+		listener.log("input from redis", input)
 
 		switch input.(type) {
 		case error:
@@ -140,13 +151,6 @@ func listen(listener *RedisListener) {
 		case redis.Subscription:
 			var subscription = input.(redis.Subscription)
 			listener.log("subscription", subscription)
-			switch subscription.Count {
-			// Notify application when all channels are subscribed.
-			case len(listener.GetChannels()):
-				listener.log("subscriptions ready", subscription.Count)
-
-				listener.ready <- true
-			}
 		default:
 			listener.log("something else", input)
 		}
