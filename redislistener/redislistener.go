@@ -41,9 +41,9 @@ func NewRedisListener() *RedisListener {
 	var result = RedisListener{}
 	result.serverAddr = "localhost:6379"
 	result.subscribers = make(map[string][]OnMessageHandler)
-	result.readTimeout = 10 * time.Second
-	result.writeTimeout = 10 * time.Second
 	result.healtCheckTimeout = time.Minute
+	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
+	result.writeTimeout = 10 * time.Second
 	result.verbose = true
 
 	result.ready = make(chan bool)
@@ -83,7 +83,6 @@ func (listener *RedisListener) Connect() *RedisListener {
 	listener.connection, listener.lastError = redis.Dial("tcp", listener.serverAddr,
 		redis.DialReadTimeout(listener.readTimeout),
 		redis.DialWriteTimeout(listener.writeTimeout))
-	defer listener.connection.Close()
 
 	if listener.lastError != nil {
 		listener.ready <- false
@@ -93,7 +92,6 @@ func (listener *RedisListener) Connect() *RedisListener {
 
 	listener.client = redis.PubSubConn{Conn: listener.connection}
 	listener.lastError = listener.client.Subscribe(redis.Args{}.AddFlat(listener.GetChannels())...)
-	defer listener.client.Close()
 
 	if listener.lastError != nil {
 		listener.log("listen error", listener.lastError)
@@ -101,10 +99,14 @@ func (listener *RedisListener) Connect() *RedisListener {
 		return listener
 	}
 
-	listener.wait.Add(1)
-
 	go func() {
+		// TODO: will allow retries, remove for now
 		for {
+			defer listener.client.Unsubscribe()
+			defer listener.connection.Close()
+
+			listener.log("start to listen")
+			listener.wait.Add(1)
 			go listen(listener)
 			go healhCheck(listener)
 			listener.wait.Wait()
@@ -118,26 +120,35 @@ func listen(listener *RedisListener) {
 	listener.log("listen start")
 
 	for {
-		switch n := listener.client.Receive().(type) {
+		listener.log("before receive")
+		var input interface{} = listener.client.Receive()
+		listener.log("before the switch", input)
+
+		switch input.(type) {
 		case error:
-			listener.log("on error", n)
+			listener.log("on error", input)
 
 			listener.wait.Done()
 			return
 		case redis.Message:
-			listener.log("on message", n.Channel, n.Data)
+			var message = input.(redis.Message)
+			listener.log("on message", message.Channel, message.Data)
 
-			for _, handler := range listener.subscribers[n.Channel] {
-				handler(n.Data)
+			for _, handler := range listener.subscribers[message.Channel] {
+				handler(message.Data)
 			}
 		case redis.Subscription:
-			switch n.Count {
+			var subscription = input.(redis.Subscription)
+			listener.log("subscription", subscription)
+			switch subscription.Count {
 			// Notify application when all channels are subscribed.
 			case len(listener.GetChannels()):
-				listener.log("subscriptions ready", n.Count)
+				listener.log("subscriptions ready", subscription.Count)
 
 				listener.ready <- true
 			}
+		default:
+			listener.log("something else", input)
 		}
 	}
 }

@@ -27,6 +27,8 @@ func main() {
 
 	var redis = redislistener.NewRedisListener().Subscribe("c1", func(message []byte) {
 		fmt.Printf("message: %v \n", message)
+	}).Subscribe("c2", func(message []byte) {
+		fmt.Printf("message (c2) : %v \n", message)
 	}).Connect()
 
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
