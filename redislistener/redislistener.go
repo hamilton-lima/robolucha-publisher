@@ -17,8 +17,8 @@ func (listener *RedisListener) print(params []interface{}) {
 	fmt.Print("\n")
 }
 
-func (listener *RedisListener) log(params ...interface{}) {
-	if listener.isVerbose {
+func (listener *RedisListener) info(params ...interface{}) {
+	if listener.isInfo {
 		listener.print(params)
 	}
 }
@@ -30,11 +30,12 @@ func (listener *RedisListener) debug(params ...interface{}) {
 }
 
 // OnMessageHandler defines function to be executed when a new message arrives
-type OnMessageHandler func(data []byte)
+type OnMessageHandler func(data string)
 
 // RedisListener is the listener itself
 type RedisListener struct {
-	serverAddr        string
+	serverAddr string
+	//TODO: replace map by sync.Map to allow changes to the list of subscribers during runtime
 	subscribers       map[string][]OnMessageHandler
 	connection        redis.Conn
 	client            redis.PubSubConn
@@ -43,7 +44,7 @@ type RedisListener struct {
 	writeTimeout      time.Duration
 	healtCheckTimeout time.Duration
 	lastError         error
-	isVerbose         bool
+	isInfo            bool
 	isDebug           bool
 }
 
@@ -55,24 +56,24 @@ func NewRedisListener() *RedisListener {
 	result.healtCheckTimeout = time.Minute
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
 	result.writeTimeout = 10 * time.Second
-	result.isVerbose = true
+	result.isInfo = true
 	result.isDebug = false
 
-	result.log("created", result.serverAddr)
+	result.info("created", result.serverAddr)
 
 	return &result
 }
 
 // Subscribe adds OnMessageHandler for one channel
 func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandler) *RedisListener {
-	listener.log("subscribe", channel)
+	listener.info("subscribe", channel)
 	listener.subscribers[channel] = append(listener.subscribers[channel], handler)
 	return listener
 }
 
 // SetDebugger change isDebug setting
 func (listener *RedisListener) SetDebugger(isDebug bool) *RedisListener {
-	listener.log("SetDebugger", isDebug)
+	listener.info("SetDebugger", isDebug)
 	listener.isDebug = isDebug
 	return listener
 }
@@ -91,14 +92,14 @@ func (listener *RedisListener) GetChannels() []string {
 
 // Connect establish the connection to Redis and listen to the subscribed channels
 func (listener *RedisListener) Connect() *RedisListener {
-	listener.log("connect start")
+	listener.info("connect start")
 
 	listener.connection, listener.lastError = redis.Dial("tcp", listener.serverAddr,
 		redis.DialReadTimeout(listener.readTimeout),
 		redis.DialWriteTimeout(listener.writeTimeout))
 
 	if listener.lastError != nil {
-		listener.log("connect error", listener.lastError)
+		listener.info("connect error", listener.lastError)
 		return listener
 	}
 
@@ -106,7 +107,7 @@ func (listener *RedisListener) Connect() *RedisListener {
 	listener.lastError = listener.client.Subscribe(redis.Args{}.AddFlat(listener.GetChannels())...)
 
 	if listener.lastError != nil {
-		listener.log("listen error", listener.lastError)
+		listener.info("listen error", listener.lastError)
 		return listener
 	}
 
@@ -116,7 +117,7 @@ func (listener *RedisListener) Connect() *RedisListener {
 			defer listener.client.Unsubscribe()
 			defer listener.connection.Close()
 
-			listener.log("start to listen")
+			listener.info("start to listen")
 			listener.wait.Add(1)
 			go listen(listener)
 			go healhCheck(listener)
@@ -128,37 +129,40 @@ func (listener *RedisListener) Connect() *RedisListener {
 }
 
 func listen(listener *RedisListener) {
-	listener.log("listen start")
+	listener.info("listen start")
 
 	for {
-		listener.log("waiting for redis")
+		listener.debug("waiting for redis")
 		var input interface{} = listener.client.Receive()
-		listener.log("input from redis", input)
+		listener.debug("input from redis", input)
 
 		switch input.(type) {
 		case error:
-			listener.log("on error", input)
+			listener.info("on error", input)
 
 			listener.wait.Done()
 			return
 		case redis.Message:
 			var message = input.(redis.Message)
-			listener.log("on message", message.Channel, message.Data)
+			var data = string(message.Data)
+			listener.info("on message channel:", message.Channel, "len:", len(data))
+			//TODO: create another log level to dump the message
+			listener.debug("on message data:", data)
 
 			for _, handler := range listener.subscribers[message.Channel] {
-				handler(message.Data)
+				handler(data)
 			}
 		case redis.Subscription:
 			var subscription = input.(redis.Subscription)
-			listener.log("subscription", subscription)
+			listener.info("subscription", subscription)
 		default:
-			listener.log("something else", input)
+			listener.info("something else", input)
 		}
 	}
 }
 
 func healhCheck(listener *RedisListener) {
-	listener.log("healhCheck")
+	listener.info("healhCheck")
 
 	ticker := time.NewTicker(listener.healtCheckTimeout)
 	defer ticker.Stop()
@@ -166,7 +170,7 @@ func healhCheck(listener *RedisListener) {
 	for listener.lastError == nil {
 		select {
 		case <-ticker.C:
-			listener.log("healhCheck ping")
+			listener.info("healhCheck ping")
 
 			// TODO: implement reconnect
 			var err = listener.client.Ping("")

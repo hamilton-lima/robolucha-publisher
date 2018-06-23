@@ -27,9 +27,9 @@ func main() {
 
 	var redis = redislistener.NewRedisListener().SetDebugger(true)
 
-	redis.Subscribe("c1", func(message []byte) {
+	redis.Subscribe("c1", func(message string) {
 		fmt.Printf("message: %v \n", message)
-	}).Subscribe("c2", func(message []byte) {
+	}).Subscribe("c2", func(message string) {
 		fmt.Printf("message (c2) : %v \n", message)
 	})
 
