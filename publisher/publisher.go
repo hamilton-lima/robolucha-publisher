@@ -1,10 +1,11 @@
-package publisher
+package main
 
 import (
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hamilton-lima/robolucha-services/redislistener"
 	"gopkg.in/olahol/melody.v1"
 )
 
@@ -24,13 +25,13 @@ func main() {
 		m.Broadcast(msg)
 	})
 
+	var redis = redislistener.NewRedisListener().Subscribe("c1", func(message []byte) {
+		fmt.Printf("message: %v \n", message)
+	})
+
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
 
-	var redis = NewRedisListener().Subscribe("c1", func(message []byte) {
-		fmt.Println("message: %v", message)
-	})
-
-	<-redis.ready
+	<-redis.Ready()
 
 }
