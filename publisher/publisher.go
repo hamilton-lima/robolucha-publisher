@@ -1,6 +1,7 @@
-package main
+package publisher
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -25,4 +26,11 @@ func main() {
 
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
+
+	var redis = NewRedisListener().Subscribe("c1", func(message []byte) {
+		fmt.Println("message: %v", message)
+	})
+
+	<-redis.ready
+
 }
