@@ -24,7 +24,6 @@ func main() {
 	})
 
 	m.HandleConnect(func(s *melody.Session) {
-		fmt.Printf(" on connect %v", s)
 		sessionManager.AddSession(s)
 	})
 

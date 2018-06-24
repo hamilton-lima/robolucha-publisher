@@ -1,7 +1,6 @@
 package sessionmanager
 
 import (
-	"fmt"
 	"net/url"
 	"strings"
 	"sync"
@@ -51,11 +50,9 @@ func (manager *SessionManager) GetSessions(matchID string) []*melody.Session {
 	manager.lock.Lock()
 	for key := range (*manager.sessions)[matchID] {
 		var session = (*manager.sessions)[matchID][key]
-		fmt.Printf("getsession %v, %p \n", matchID, session)
 		result = append(result, session)
 	}
 	manager.lock.Unlock()
-	fmt.Printf("getsession %v \n", result)
 	return result
 }
 
@@ -71,7 +68,6 @@ func (manager *SessionManager) AddSession(session *melody.Session) {
 	}
 
 	(*manager.sessions)[matchID][ID] = session
-	fmt.Printf("after adding to session %v \n", (*manager.sessions)[matchID])
 	manager.lock.Unlock()
 }
 
