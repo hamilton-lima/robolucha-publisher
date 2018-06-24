@@ -6,23 +6,37 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/hamilton-lima/robolucha-services/redislistener"
+	"github.com/hamilton-lima/robolucha-services/sessionmanager"
 	"gopkg.in/olahol/melody.v1"
 )
 
 func main() {
 	r := gin.Default()
 	m := melody.New()
+	var sessionManager = sessionmanager.NewSessionManager()
 
 	r.GET("/", func(c *gin.Context) {
 		http.ServeFile(c.Writer, c.Request, "index.html")
 	})
 
-	r.GET("/message", func(c *gin.Context) {
+	r.GET("/match/:id", func(c *gin.Context) {
 		m.HandleRequest(c.Writer, c.Request)
 	})
 
+	m.HandleConnect(func(s *melody.Session) {
+		fmt.Printf(" on connect %v", s)
+		sessionManager.AddSession(s)
+	})
+
+	m.HandleDisconnect(func(s *melody.Session) {
+		sessionManager.RemoveSession(s)
+	})
+
+	//TODO: replace this by ONLY pushing the messages from REDIS to the active sessions
 	m.HandleMessage(func(s *melody.Session, msg []byte) {
-		m.Broadcast(msg)
+		var matchID = sessionManager.GetIDFromURL(s.Request.URL)
+		var sessions = sessionManager.GetSessions(matchID)
+		m.BroadcastMultiple(msg, sessions)
 	})
 
 	var redis = redislistener.NewRedisListener().SetDebugger(true)
