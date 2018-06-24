@@ -1,6 +1,7 @@
 package sessionmanager_test
 
 import (
+	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo"
@@ -38,6 +39,7 @@ var _ = Describe("Sessionmanager", func() {
 			var session = &melody.Session{}
 			req, _ := http.NewRequest("GET", "/match/"+globalMatchID, nil)
 			session.Request = req
+			fmt.Printf("create session with request %p \n", session)
 			return session
 		}
 
@@ -85,9 +87,9 @@ var _ = Describe("Sessionmanager", func() {
 		})
 
 		It("nextID should generate values in sequence", func() {
-			Expect(*manager.NextID()).To(Equal(uint64(1)))
-			Expect(*manager.NextID()).To(Equal(uint64(2)))
-			Expect(*manager.NextID()).To(Equal(uint64(3)))
+			Expect(manager.NextID()).To(Equal(uint64(1)))
+			Expect(manager.NextID()).To(Equal(uint64(2)))
+			Expect(manager.NextID()).To(Equal(uint64(3)))
 		})
 
 		It("should have proper ID in the sessions after adding", func() {
@@ -95,17 +97,25 @@ var _ = Describe("Sessionmanager", func() {
 			var session2 = createSessionWithRequest()
 			var session3 = createSessionWithRequest()
 
-			Expect(manager.GetIDFromSession(session1)).To(Equal(0))
-			Expect(manager.GetIDFromSession(session2)).To(Equal(0))
-			Expect(manager.GetIDFromSession(session3)).To(Equal(0))
+			Expect(manager.GetIDFromSession(session1)).To(Equal(uint64(0)))
+			Expect(manager.GetIDFromSession(session2)).To(Equal(uint64(0)))
+			Expect(manager.GetIDFromSession(session3)).To(Equal(uint64(0)))
 
 			manager.AddSession(session1)
 			manager.AddSession(session2)
 			manager.AddSession(session3)
 
-			Expect(manager.GetIDFromSession(session1)).To(Equal(1))
-			Expect(manager.GetIDFromSession(session2)).To(Equal(2))
-			Expect(manager.GetIDFromSession(session3)).To(Equal(3))
+			Expect(manager.GetIDFromSession(session1)).To(Equal(uint64(1)))
+			Expect(manager.GetIDFromSession(session2)).To(Equal(uint64(2)))
+			Expect(manager.GetIDFromSession(session3)).To(Equal(uint64(3)))
+		})
+
+		It("should have proper ID when setting to Session", func() {
+			var session1 = createSessionWithRequest()
+			var ID = manager.NextID()
+			session1.Set("ID", ID)
+			var readID = manager.GetIDFromSession(session1)
+			Expect(readID).To(Equal(ID))
 		})
 
 		It("should have valid elements after adding and removing from the list", func() {

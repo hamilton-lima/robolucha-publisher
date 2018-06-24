@@ -35,8 +35,7 @@ func main() {
 	//TODO: replace this by ONLY pushing the messages from REDIS to the active sessions
 	m.HandleMessage(func(s *melody.Session, msg []byte) {
 		var matchID = sessionManager.GetIDFromURL(s.Request.URL)
-		var sessions = sessionManager.GetSessions(matchID)
-		m.BroadcastMultiple(msg, sessions)
+		sessionManager.Broadcast(matchID, msg)
 	})
 
 	var redis = redislistener.NewRedisListener().SetDebugger(true)

@@ -12,7 +12,7 @@ import (
 
 // SessionManager handle the list of active sessions updated
 type SessionManager struct {
-	sessions      *map[string][]*melody.Session
+	sessions      *map[string]map[uint64]*melody.Session
 	lock          *sync.Mutex
 	lastSessionID *uint64
 }
@@ -20,7 +20,7 @@ type SessionManager struct {
 // NewSessionManager creates a new SessionManager
 func NewSessionManager() *SessionManager {
 	var result = SessionManager{}
-	var m = make(map[string][]*melody.Session)
+	var m = make(map[string]map[uint64]*melody.Session)
 	result.sessions = &m
 	result.lock = &sync.Mutex{}
 	result.lastSessionID = new(uint64)
@@ -35,58 +35,68 @@ func (manager *SessionManager) GetIDFromURL(URL *url.URL) string {
 	return last
 }
 
-// GetSessions return the list of active sessions
+// Broadcast send message to the current sessions of the matchID
+func (manager *SessionManager) Broadcast(matchID string, message []byte) {
+	manager.lock.Lock()
+	for key := range (*manager.sessions)[matchID] {
+		var session = (*manager.sessions)[matchID][key]
+		go session.Write(message)
+	}
+	manager.lock.Unlock()
+}
+
+// GetSessions should be used only for tests
 func (manager *SessionManager) GetSessions(matchID string) []*melody.Session {
-	return (*manager.sessions)[matchID]
+	var result []*melody.Session
+	manager.lock.Lock()
+	for key := range (*manager.sessions)[matchID] {
+		var session = (*manager.sessions)[matchID][key]
+		fmt.Printf("getsession %v, %p \n", matchID, session)
+		result = append(result, session)
+	}
+	manager.lock.Unlock()
+	fmt.Printf("getsession %v \n", result)
+	return result
 }
 
 // AddSession add a new session
 func (manager *SessionManager) AddSession(session *melody.Session) {
 	var matchID = manager.GetIDFromURL(session.Request.URL)
-	session.Set("ID", manager.NextID())
 	manager.lock.Lock()
-	(*manager.sessions)[matchID] = append((*manager.sessions)[matchID], session)
+	var ID = manager.NextID()
+	session.Set("ID", ID)
+
+	if (*manager.sessions)[matchID] == nil {
+		(*manager.sessions)[matchID] = make(map[uint64]*melody.Session)
+	}
+
+	(*manager.sessions)[matchID][ID] = session
+	fmt.Printf("after adding to session %v \n", (*manager.sessions)[matchID])
 	manager.lock.Unlock()
 }
 
 // RemoveSession removes a session from the current list
-// TODO: use another structure to support several removal operations
-// and regenerate the session array from it
 func (manager *SessionManager) RemoveSession(session *melody.Session) {
 	var matchID = manager.GetIDFromURL(session.Request.URL)
 	var ID2Remove = manager.GetIDFromSession(session)
 
 	manager.lock.Lock()
-	var size = len((*manager.sessions)[matchID]) - 1
-	var updatedSessions []*melody.Session
-
-	if size > 0 {
-		updatedSessions = make([]*melody.Session, size, size)
-		for _, slice := range (*manager.sessions)[matchID] {
-			var ID = manager.GetIDFromSession(slice)
-			fmt.Printf("ID=%v ID2Remove=%v,", ID, ID2Remove)
-
-			if ID != ID2Remove {
-				updatedSessions = append(updatedSessions, slice)
-			}
-		}
-	} else {
-		updatedSessions = make([]*melody.Session, 0, 0)
-	}
-
-	(*manager.sessions)[matchID] = updatedSessions
+	delete((*manager.sessions)[matchID], ID2Remove)
 	manager.lock.Unlock()
 }
 
 // GetIDFromSession returns the ID from the Session
 func (manager *SessionManager) GetIDFromSession(session *melody.Session) uint64 {
 	var result, _ = session.Get("ID")
-	var pointer = result.(*uint64)
-	return *pointer
+	if result == nil {
+		return uint64(0)
+	}
+
+	return result.(uint64)
 }
 
 // NextID calculates the next session ID
-func (manager *SessionManager) NextID() *uint64 {
+func (manager *SessionManager) NextID() uint64 {
 	atomic.AddUint64(manager.lastSessionID, 1)
-	return manager.lastSessionID
+	return *manager.lastSessionID
 }
