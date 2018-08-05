@@ -1,4 +1,4 @@
-package sessionmanager_test
+package publisher
 
 import (
 	"fmt"

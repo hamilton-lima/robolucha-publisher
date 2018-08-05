@@ -1,4 +1,4 @@
-package sessionmanager
+package publisher
 
 import (
 	"net/url"

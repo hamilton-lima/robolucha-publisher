@@ -1,18 +1,17 @@
-package main
+package publisher
 
 import (
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hamilton-lima/robolucha-services"
 	"gopkg.in/olahol/melody.v1"
 )
 
 func main() {
 	r := gin.Default()
 	m := melody.New()
-	var sessionManager = sessionmanager.NewSessionManager()
+	var sessionManager = NewSessionManager()
 
 	r.GET("/", func(c *gin.Context) {
 		http.ServeFile(c.Writer, c.Request, "index.html")
@@ -36,7 +35,7 @@ func main() {
 		sessionManager.Broadcast(matchID, msg)
 	})
 
-	var redis = redislistener.NewRedisListener().SetDebugger(true)
+	var redis = NewRedisListener().SetDebugger(true)
 
 	redis.Subscribe("c1", func(message string) {
 		fmt.Printf("message: %v \n", message)

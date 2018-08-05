@@ -1,4 +1,4 @@
-package redislistener
+package publisher
 
 import (
 	"fmt"
