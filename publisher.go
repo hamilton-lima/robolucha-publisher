@@ -5,8 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/hamilton-lima/robolucha-services/redislistener"
-	"github.com/hamilton-lima/robolucha-services/sessionmanager"
+	"github.com/hamilton-lima/robolucha-services"
 	"gopkg.in/olahol/melody.v1"
 )
 
