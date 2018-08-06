@@ -1,0 +1,6 @@
+version: '2'
+
+services:
+  man:
+    build: .
+    image: robolucha-publisher:0.0.2
