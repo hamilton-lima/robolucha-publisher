@@ -1,17 +1,19 @@
-package publisher
+package main
 
 import (
 	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	redis "github.com/hamilton-lima/robolucha-publisher/redis"
+	session "github.com/hamilton-lima/robolucha-publisher/session"
 	"gopkg.in/olahol/melody.v1"
 )
 
 func main() {
 	r := gin.Default()
 	m := melody.New()
-	var sessionManager = NewSessionManager()
+	var sessionManager = session.NewSessionManager()
 
 	r.GET("/", func(c *gin.Context) {
 		http.ServeFile(c.Writer, c.Request, "index.html")
@@ -35,15 +37,15 @@ func main() {
 		sessionManager.Broadcast(matchID, msg)
 	})
 
-	var redis = NewRedisListener().SetDebugger(true)
+	var listener = redis.NewRedisListener().SetDebugger(true)
 
-	redis.Subscribe("c1", func(message string) {
+	listener.Subscribe("c1", func(message string) {
 		fmt.Printf("message: %v \n", message)
 	}).Subscribe("c2", func(message string) {
 		fmt.Printf("message (c2) : %v \n", message)
 	})
 
-	redis.Connect()
+	listener.Connect()
 
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")

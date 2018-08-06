@@ -1,4 +1,4 @@
-package publisher
+package session
 
 import (
 	"fmt"
@@ -7,8 +7,6 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	melody "gopkg.in/olahol/melody.v1"
-
-	. "github.com/hamilton-lima/robolucha-services/sessionmanager"
 )
 
 var _ = Describe("Sessionmanager", func() {
