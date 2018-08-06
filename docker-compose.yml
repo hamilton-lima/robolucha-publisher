@@ -1,6 +1,8 @@
 version: '2'
 
 services:
-  man:
+  publisher:
     build: .
-    image: robolucha-publisher:0.0.2
+    image: robolucha-publisher:0.0.3
+    ports:
+     - "5000:5000"

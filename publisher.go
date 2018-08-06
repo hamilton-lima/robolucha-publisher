@@ -16,7 +16,9 @@ func main() {
 	var sessionManager = session.NewSessionManager()
 
 	r.GET("/", func(c *gin.Context) {
-		http.ServeFile(c.Writer, c.Request, "index.html")
+		c.JSON(200, gin.H{
+			"message": "nothing to see here",
+		})
 	})
 
 	r.GET("/match/:id", func(c *gin.Context) {
