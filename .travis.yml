@@ -1,0 +1,8 @@
+language: minimal
+
+branches:
+  only:
+    - master
+
+script:
+  - curl --max-time 900 -H "web-hook-token:$WEBHOOK_TOKEN" robolucha.com:8095/publisher | jq .
