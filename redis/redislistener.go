@@ -43,7 +43,7 @@ func NewRedisListener() *RedisListener {
 	var result = RedisListener{}
 	result.serverAddr = serverAddr
 	result.subscribers = make(map[string][]OnMessageHandler)
-	result.healtCheckTimeout = time.Minute
+	result.healtCheckTimeout = time.Minute * 5
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
 	result.writeTimeout = 10 * time.Second
 	result.isInfo = true
@@ -59,15 +59,34 @@ func NewRedisListener() *RedisListener {
 // Subscribe adds OnMessageHandler for one channel
 func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandler) *RedisListener {
 	log.WithFields(log.Fields{
-		"channels": channel,
+		"channel": channel,
 	}).Info("Subscribe")
 
+	_, present := listener.subscribers[channel]
 	listener.subscribers[channel] = append(listener.subscribers[channel], handler)
+
+	if !present {
+
+		log.WithFields(log.Fields{
+			"channel": channel,
+		}).Info("First subscriber to channel")
+
+		listener.lastError = listener.client.Subscribe(channel)
+
+		if listener.lastError != nil {
+			log.WithFields(log.Fields{
+				"error":   listener.lastError,
+				"channel": channel,
+			}).Error("Subscribing to channel")
+		}
+	}
+
 	return listener
 }
 
 // UnSubscribe based on the session
 func (listener *RedisListener) UnSubscribe(session *melody.Session) *RedisListener {
+
 	// TODO: search for subscriptions where the handler has this session
 	return listener
 }
@@ -111,14 +130,6 @@ func (listener *RedisListener) Connect() *RedisListener {
 	}
 
 	listener.client = redis.PubSubConn{Conn: listener.connection}
-	listener.lastError = listener.client.Subscribe(redis.Args{}.AddFlat(listener.GetChannels())...)
-
-	if listener.lastError != nil {
-		log.WithFields(log.Fields{
-			"error": listener.lastError,
-		}).Error("Creating REDIS Client")
-		return listener
-	}
 
 	go func() {
 		// TODO: will allow retries, remove for now
@@ -200,7 +211,7 @@ func healhCheck(listener *RedisListener) {
 			// TODO: implement reconnect
 			var err = listener.client.Ping("")
 			if err != nil {
-				listener.wait.Done()
+				panic(1)
 			}
 		}
 	}

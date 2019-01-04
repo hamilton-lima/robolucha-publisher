@@ -35,7 +35,7 @@ func main() {
 		})
 	})
 
-	r.POST("/ws", func(c *gin.Context) {
+	r.GET("/ws", func(c *gin.Context) {
 		m.HandleRequest(c.Writer, c.Request)
 	})
 
