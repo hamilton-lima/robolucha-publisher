@@ -1,55 +1,82 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
-	redis "github.com/hamilton-lima/robolucha-publisher/redis"
-	session "github.com/hamilton-lima/robolucha-publisher/session"
-	"gopkg.in/olahol/melody.v1"
+	log "github.com/sirupsen/logrus"
+	redis "gitlab.com/robolucha/robolucha-publisher/redis"
+	melody "gopkg.in/olahol/melody.v1"
 )
 
+// WatchDetails
+type WatchDetails struct {
+	MatchID    uint `json:"matchID"`
+	LuchadorID uint `json:"luchadorID"`
+}
+
 func main() {
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetOutput(os.Stdout)
+	log.SetLevel(log.DebugLevel)
+
 	r := gin.Default()
 	m := melody.New()
-	var sessionManager = session.NewSessionManager()
+
+	var listener = redis.NewRedisListener().SetDebugger(true)
+	listener.Connect()
 
 	r.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"message": "nothing to see here",
+			"message": "Nothing to see here.",
 		})
 	})
 
-	r.GET("/match/:id", func(c *gin.Context) {
+	r.POST("/ws", func(c *gin.Context) {
 		m.HandleRequest(c.Writer, c.Request)
 	})
 
-	m.HandleConnect(func(s *melody.Session) {
-		sessionManager.AddSession(s)
-	})
+	// m.HandleConnect(func(s *melody.Session) {
+	// })
 
 	m.HandleDisconnect(func(s *melody.Session) {
-		sessionManager.RemoveSession(s)
+		listener.UnSubscribe(s)
 	})
 
-	//TODO: replace this by ONLY pushing the messages from REDIS to the active sessions
+	// Watch details information
 	m.HandleMessage(func(s *melody.Session, msg []byte) {
-		var matchID = sessionManager.GetIDFromURL(s.Request.URL)
-		sessionManager.Broadcast(matchID, msg)
+
+		var details WatchDetails
+		err := json.Unmarshal(msg, &details)
+		if err != nil {
+			log.Error("Invalid message content on HandleMessage")
+			return
+		}
+
+		log.WithFields(log.Fields{
+			"details": details,
+		}).Info("handleMessage")
+
+		matchStateChannel := fmt.Sprintf("match.%v.state", details.MatchID)
+		matchEventChannel := fmt.Sprintf("match.%v.event", details.MatchID)
+		luchadorMessageChannel := fmt.Sprintf("luchador.%v.message", details.LuchadorID)
+
+		handler := redis.OnMessageHandler{
+			Session: s,
+			Handler: func(s *melody.Session, message []byte) {
+				s.Write(message)
+			}}
+
+		listener.Subscribe(matchStateChannel, handler)
+		listener.Subscribe(matchEventChannel, handler)
+		listener.Subscribe(luchadorMessageChannel, handler)
 	})
-
-	var listener = redis.NewRedisListener().SetDebugger(true)
-
-	listener.Subscribe("c1", func(message string) {
-		fmt.Printf("message: %v \n", message)
-	}).Subscribe("c2", func(message string) {
-		fmt.Printf("message (c2) : %v \n", message)
-	})
-
-	listener.Connect()
 
 	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
 
+	log.Info("Publisher started on port 5000")
 }

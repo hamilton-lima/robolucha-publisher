@@ -2,35 +2,20 @@ package redis
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
+	log "github.com/sirupsen/logrus"
+	melody "gopkg.in/olahol/melody.v1"
 )
 
-// TODO: replace by logger
-func (listener *RedisListener) print(params []interface{}) {
-	fmt.Print("[redislistener] ")
-	for _, line := range params {
-		fmt.Printf("%v ", line)
-	}
-	fmt.Print("\n")
-}
-
-func (listener *RedisListener) info(params ...interface{}) {
-	if listener.isInfo {
-		listener.print(params)
-	}
-}
-
-func (listener *RedisListener) debug(params ...interface{}) {
-	if listener.isDebug {
-		listener.print(params)
-	}
-}
-
 // OnMessageHandler defines function to be executed when a new message arrives
-type OnMessageHandler func(data string)
+type OnMessageHandler struct {
+	Session *melody.Session
+	Handler func(session *melody.Session, data []byte)
+}
 
 // RedisListener is the listener itself
 type RedisListener struct {
@@ -50,8 +35,13 @@ type RedisListener struct {
 
 // NewRedisListener creates a new RedisListener
 func NewRedisListener() *RedisListener {
+
+	host := os.Getenv("REDIS_HOST")
+	port := os.Getenv("REDIS_PORT")
+	serverAddr := fmt.Sprintf("%v:%v", host, port)
+
 	var result = RedisListener{}
-	result.serverAddr = "localhost:6379"
+	result.serverAddr = serverAddr
 	result.subscribers = make(map[string][]OnMessageHandler)
 	result.healtCheckTimeout = time.Minute
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
@@ -59,21 +49,35 @@ func NewRedisListener() *RedisListener {
 	result.isInfo = true
 	result.isDebug = false
 
-	result.info("created", result.serverAddr)
+	log.WithFields(log.Fields{
+		"serverAddr": serverAddr,
+	}).Info("Connect to REDIS Configuration")
 
 	return &result
 }
 
 // Subscribe adds OnMessageHandler for one channel
 func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandler) *RedisListener {
-	listener.info("subscribe", channel)
+	log.WithFields(log.Fields{
+		"channels": channel,
+	}).Info("Subscribe")
+
 	listener.subscribers[channel] = append(listener.subscribers[channel], handler)
+	return listener
+}
+
+// UnSubscribe based on the session
+func (listener *RedisListener) UnSubscribe(session *melody.Session) *RedisListener {
+	// TODO: search for subscriptions where the handler has this session
 	return listener
 }
 
 // SetDebugger change isDebug setting
 func (listener *RedisListener) SetDebugger(isDebug bool) *RedisListener {
-	listener.info("SetDebugger", isDebug)
+	log.WithFields(log.Fields{
+		"isDebug": isDebug,
+	}).Info("SetDebugger")
+
 	listener.isDebug = isDebug
 	return listener
 }
@@ -92,14 +96,17 @@ func (listener *RedisListener) GetChannels() []string {
 
 // Connect establish the connection to Redis and listen to the subscribed channels
 func (listener *RedisListener) Connect() *RedisListener {
-	listener.info("connect start")
+	log.Info("Connecting to REDIS")
 
 	listener.connection, listener.lastError = redis.Dial("tcp", listener.serverAddr,
 		redis.DialReadTimeout(listener.readTimeout),
 		redis.DialWriteTimeout(listener.writeTimeout))
 
 	if listener.lastError != nil {
-		listener.info("connect error", listener.lastError)
+		log.WithFields(log.Fields{
+			"error": listener.lastError,
+		}).Error("Connecting to REDIS")
+
 		return listener
 	}
 
@@ -107,7 +114,9 @@ func (listener *RedisListener) Connect() *RedisListener {
 	listener.lastError = listener.client.Subscribe(redis.Args{}.AddFlat(listener.GetChannels())...)
 
 	if listener.lastError != nil {
-		listener.info("listen error", listener.lastError)
+		log.WithFields(log.Fields{
+			"error": listener.lastError,
+		}).Error("Creating REDIS Client")
 		return listener
 	}
 
@@ -117,7 +126,7 @@ func (listener *RedisListener) Connect() *RedisListener {
 			defer listener.client.Unsubscribe()
 			defer listener.connection.Close()
 
-			listener.info("start to listen")
+			log.Info("Connected to REDIS, listening messages")
 			listener.wait.Add(1)
 			go listen(listener)
 			go healhCheck(listener)
@@ -129,40 +138,56 @@ func (listener *RedisListener) Connect() *RedisListener {
 }
 
 func listen(listener *RedisListener) {
-	listener.info("listen start")
+	log.Info("REDIS listener start")
 
 	for {
-		listener.debug("waiting for redis")
+		log.Debug("Waiting for REDIS")
 		var input interface{} = listener.client.Receive()
-		listener.debug("input from redis", input)
+
+		log.WithFields(log.Fields{
+			"message": input,
+		}).Debug("Message from REDIS")
 
 		switch input.(type) {
 		case error:
-			listener.info("on error", input)
+			log.WithFields(log.Fields{
+				"message": input,
+			}).Info("onError")
 
 			listener.wait.Done()
 			return
 		case redis.Message:
 			var message = input.(redis.Message)
-			var data = string(message.Data)
-			listener.info("on message channel:", message.Channel, "len:", len(data))
-			//TODO: create another log level to dump the message
-			listener.debug("on message data:", data)
 
-			for _, handler := range listener.subscribers[message.Channel] {
-				handler(data)
+			if log.IsLevelEnabled(log.DebugLevel) {
+				var data = string(message.Data)
+
+				log.WithFields(log.Fields{
+					"channel": message.Channel,
+					"message": data,
+					"length":  len(data),
+				}).Debug("onMessage")
+			}
+
+			for _, onMessageHandler := range listener.subscribers[message.Channel] {
+				onMessageHandler.Handler(onMessageHandler.Session, message.Data)
 			}
 		case redis.Subscription:
 			var subscription = input.(redis.Subscription)
-			listener.info("subscription", subscription)
+			log.WithFields(log.Fields{
+				"subscription": subscription,
+			}).Debug("subscription")
+
 		default:
-			listener.info("something else", input)
+			log.WithFields(log.Fields{
+				"input": input,
+			}).Debug("something else")
 		}
 	}
 }
 
 func healhCheck(listener *RedisListener) {
-	listener.info("healhCheck")
+	log.Info("healhCheck")
 
 	ticker := time.NewTicker(listener.healtCheckTimeout)
 	defer ticker.Stop()
@@ -170,7 +195,7 @@ func healhCheck(listener *RedisListener) {
 	for listener.lastError == nil {
 		select {
 		case <-ticker.C:
-			listener.info("healhCheck ping")
+			log.Info("healthCheck ping")
 
 			// TODO: implement reconnect
 			var err = listener.client.Ping("")
