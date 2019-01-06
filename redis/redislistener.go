@@ -155,10 +155,6 @@ func listen(listener *RedisListener) {
 		log.Debug("Waiting for REDIS")
 		var input interface{} = listener.client.Receive()
 
-		log.WithFields(log.Fields{
-			"message": input,
-		}).Debug("Message from REDIS")
-
 		switch input.(type) {
 		case error:
 			log.WithFields(log.Fields{
