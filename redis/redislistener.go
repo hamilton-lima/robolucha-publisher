@@ -124,7 +124,7 @@ func (listener *RedisListener) Connect() *RedisListener {
 	if listener.lastError != nil {
 		log.WithFields(log.Fields{
 			"error": listener.lastError,
-		}).Error("Connecting to REDIS")
+		}).Error("Error Connecting to REDIS")
 
 		return listener
 	}

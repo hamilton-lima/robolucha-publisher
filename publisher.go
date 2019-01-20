@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	redis "gitlab.com/robolucha/robolucha-publisher/redis"
@@ -25,6 +26,16 @@ func main() {
 
 	r := gin.Default()
 	m := melody.New()
+	m.Upgrader.CheckOrigin = func(r *http.Request) bool {
+		log.Debug("CheckOrigin function")
+		return true
+	}
+
+	config := cors.DefaultConfig()
+	config.AllowAllOrigins = true
+	config.AllowCredentials = true
+	config.AddAllowHeaders("Authorization")
+	r.Use(cors.New(config))
 
 	var listener = redis.NewRedisListener().SetDebugger(true)
 	listener.Connect()
@@ -39,8 +50,9 @@ func main() {
 		m.HandleRequest(c.Writer, c.Request)
 	})
 
-	// m.HandleConnect(func(s *melody.Session) {
-	// })
+	m.HandleConnect(func(s *melody.Session) {
+		log.Debug("Handle Connect")
+	})
 
 	m.HandleDisconnect(func(s *melody.Session) {
 		listener.UnSubscribe(s)
@@ -75,7 +87,6 @@ func main() {
 		listener.Subscribe(luchadorMessageChannel, handler)
 	})
 
-	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 	r.Run(":5000")
 
 	log.Info("Publisher started on port 5000")
