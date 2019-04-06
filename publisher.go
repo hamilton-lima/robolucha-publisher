@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	. "github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	redis "gitlab.com/robolucha/robolucha-publisher/redis"
 	melody "gopkg.in/olahol/melody.v1"
@@ -19,10 +20,31 @@ type WatchDetails struct {
 	LuchadorID uint `json:"luchadorID"`
 }
 
+func setLogLevel(name string) {
+	level := os.Getenv(name)
+	if level == "" {
+		level = "info"
+	}
+
+	logLevel, err := ParseLevel(level)
+
+	if err != nil {
+		log.WithFields(log.Fields{
+			"level": level,
+		}).Warning("Invalid log level, default 'info'")
+		log.SetLevel(log.InfoLevel)
+	} else {
+		log.WithFields(log.Fields{
+			"level": level,
+		}).Info("Set Log level")
+		log.SetLevel(logLevel)
+	}
+}
+
 func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	log.SetOutput(os.Stdout)
-	log.SetLevel(log.DebugLevel)
+	setLogLevel("PUBLISHER_LOG_LEVEL")
 
 	r := gin.Default()
 	m := melody.New()
