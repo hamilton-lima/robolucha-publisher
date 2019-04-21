@@ -1,0 +1,12 @@
+image: node:9.4.0
+
+stages:
+- build
+
+webhook:
+  stage: build
+  script:
+    - curl --max-time 900 --fail -H "web-hook-token:$WEBHOOK_TOKEN" robolucha.com:4295/publisher
+    - curl --max-time 900 --fail -H "web-hook-token:$WEBHOOK_TOKEN" robolucha.com:4295/up 
+  only:
+    - master
