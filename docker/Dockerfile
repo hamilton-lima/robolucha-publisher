@@ -28,6 +28,9 @@ RUN chmod +x /go/bin/publisher
 FROM alpine
 EXPOSE 5000
 
+RUN mkdir -pv /usr/src/app
+
 # Copy our static executable
 COPY --from=builder /go/bin/publisher /usr/src/app
+RUN ls -alh /usr/src/app
 ENTRYPOINT ["/usr/src/app/publisher"]
