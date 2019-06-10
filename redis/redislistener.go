@@ -85,9 +85,21 @@ func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandle
 }
 
 // UnSubscribe based on the session
-func (listener *RedisListener) UnSubscribe(session *melody.Session) *RedisListener {
+func (listener *RedisListener) UnSubscribeAll(session *melody.Session) *RedisListener {
 
-	// TODO: search for subscriptions where the handler has this session
+	for channel := range listener.subscribers {
+		for n, onMessageHandler := range listener.subscribers[channel] {
+			if onMessageHandler.Session == session {
+				log.WithFields(log.Fields{
+					"channel": channel,
+					"session": session,
+				}).Info("UnSubscribeAll found subscription to remove")
+
+				listener.subscribers[channel][n].Session = nil
+			}
+		}
+	}
+
 	return listener
 }
 
@@ -176,9 +188,21 @@ func listen(listener *RedisListener) {
 				}).Debug("onMessage")
 			}
 
+			activeHandlers := make([]OnMessageHandler, 0)
 			for _, onMessageHandler := range listener.subscribers[message.Channel] {
-				onMessageHandler.Handler(onMessageHandler.Session, message.Data)
+				// remove inactive
+				if onMessageHandler.Session != nil {
+					onMessageHandler.Handler(onMessageHandler.Session, message.Data)
+					activeHandlers = append(activeHandlers, onMessageHandler)
+				} else {
+					log.WithFields(log.Fields{
+						"channel": message.Channel,
+					}).Info("listen removed handlers")
+				}
 			}
+
+			listener.subscribers[message.Channel] = activeHandlers
+
 		case redis.Subscription:
 			var subscription = input.(redis.Subscription)
 			log.WithFields(log.Fields{

@@ -1,7 +1,7 @@
 # prepare builder
 FROM golang as builder
-COPY . $GOPATH/src/github.com/hamilton-lima/robolucha-publisher/
-WORKDIR $GOPATH/src/github.com/hamilton-lima/robolucha-publisher/
+COPY go-get.sh $GOPATH/src/gitlab.com/robolucha/robolucha-publisher/
+WORKDIR $GOPATH/src/gitlab.com/robolucha/robolucha-publisher/
 
 # Authorize SSH Host
 RUN mkdir -p /root/.ssh && \
@@ -16,16 +16,18 @@ RUN chmod 600 /root/.ssh/id_rsa
 RUN git config --global --add url."git@gitlab.com:robolucha/robolucha-publisher.git".insteadOf "https://gitlab.com/robolucha/robolucha-publisher.git"
 
 # get dependencies
-RUN go get -v
+RUN bash -c $GOPATH/src/gitlab.com/robolucha/robolucha-publisher/go-get.sh
+
+COPY . $GOPATH/src/gitlab.com/robolucha/robolucha-publisher/
 
 # build the binary static linked
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /go/bin/publisher
 RUN chmod +x /go/bin/publisher
 
 # start from scratch
-FROM scratch
+FROM alpine
 EXPOSE 5000
 
 # Copy our static executable
-COPY --from=builder /go/bin/publisher /go/bin/publisher
-ENTRYPOINT ["/go/bin/publisher"]
+COPY --from=builder /go/bin/publisher /usr/src/app
+ENTRYPOINT ["/usr/src/app/publisher"]

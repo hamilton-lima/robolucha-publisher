@@ -77,7 +77,7 @@ func main() {
 	})
 
 	m.HandleDisconnect(func(s *melody.Session) {
-		listener.UnSubscribe(s)
+		listener.UnSubscribeAll(s)
 	})
 
 	// Watch details information
@@ -104,6 +104,7 @@ func main() {
 				s.Write(message)
 			}}
 
+		listener.UnSubscribeAll(s)
 		listener.Subscribe(matchStateChannel, handler)
 		listener.Subscribe(matchEventChannel, handler)
 		listener.Subscribe(luchadorMessageChannel, handler)
