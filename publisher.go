@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	. "github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	redis "gitlab.com/robolucha/robolucha-publisher/redis"
 	melody "gopkg.in/olahol/melody.v1"
@@ -26,7 +25,7 @@ func setLogLevel(name string) {
 		level = "info"
 	}
 
-	logLevel, err := ParseLevel(level)
+	logLevel, err := log.ParseLevel(level)
 
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -45,6 +44,7 @@ func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	log.SetOutput(os.Stdout)
 	setLogLevel("PUBLISHER_LOG_LEVEL")
+	log.Info("Starting Robolucha publisher.")
 
 	r := gin.Default()
 	m := melody.New()
@@ -104,10 +104,10 @@ func main() {
 				s.Write(message)
 			}}
 
-		listener.UnSubscribeAll(s)
-		listener.Subscribe(matchStateChannel, handler)
-		listener.Subscribe(matchEventChannel, handler)
-		listener.Subscribe(luchadorMessageChannel, handler)
+		listener.UnSubscribeAll(handler.Session)
+		listener.Subscribe(matchStateChannel, &handler)
+		listener.Subscribe(matchEventChannel, &handler)
+		listener.Subscribe(luchadorMessageChannel, &handler)
 	})
 
 	r.Run(":5000")

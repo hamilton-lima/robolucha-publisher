@@ -1,7 +1,6 @@
 package session
 
 import (
-	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo"
@@ -37,7 +36,6 @@ var _ = Describe("Sessionmanager", func() {
 			var session = &melody.Session{}
 			req, _ := http.NewRequest("GET", "/match/"+globalMatchID, nil)
 			session.Request = req
-			fmt.Printf("create session with request %p \n", session)
 			return session
 		}
 
