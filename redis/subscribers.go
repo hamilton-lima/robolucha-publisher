@@ -50,7 +50,7 @@ func (c *Cache) Get(key string) chan *OnMessageHandler {
 // Exists returns a channel for the keys's data
 func (c *Cache) Exists(key string) chan bool {
 	request := request{
-		operation: get,
+		operation: exists,
 		key:       key,
 		exists:    make(chan bool),
 	}
