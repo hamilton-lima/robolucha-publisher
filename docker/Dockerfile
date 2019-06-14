@@ -4,23 +4,11 @@ FROM golang:1.12.6 as builder
 RUN mkdir -p /usr/local/share/robolucha-publisher
 WORKDIR /usr/local/share/robolucha-publisher/
 
+# get dependencies
 COPY go.mod /usr/local/share/robolucha-publisher/
-
-# Authorize SSH Host
-# RUN mkdir -p /root/.ssh && \
-#     chmod 0700 /root/.ssh && \
-#     ssh-keyscan gitlab.com > /root/.ssh/known_hosts
-
-# Add the keys and set permissions
-# COPY .ssh/id_rsa /root/.ssh/id_rsa
-# RUN chmod 600 /root/.ssh/id_rsa 
-
-# # Set git to use SSH instead of HTTPS
-# RUN git config --global --add url."git@gitlab.com:robolucha/robolucha-publisher.git".insteadOf "https://gitlab.com/robolucha/robolucha-publisher.git"
-
-# # get dependencies
-# RUN bash -c $GOPATH/src/gitlab.com/robolucha/robolucha-publisher/go-get.sh
 RUN go get 
+
+# copy source code
 COPY . /usr/local/share/robolucha-publisher/
 
 # build the binary static linked
