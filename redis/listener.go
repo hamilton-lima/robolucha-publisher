@@ -17,11 +17,10 @@ type OnMessageHandler struct {
 	Handler func(session *melody.Session, data []byte)
 }
 
-// RedisListener is the listener itself
-type RedisListener struct {
-	serverAddr string
-	//TODO: replace map by sync.Map to allow changes to the list of subscribers during runtime
-	subscribers       map[string][]OnMessageHandler
+// Listener is the listener itself
+type Listener struct {
+	serverAddr        string
+	subscribers       *Cache
 	connection        redis.Conn
 	client            redis.PubSubConn
 	wait              sync.WaitGroup
@@ -34,15 +33,15 @@ type RedisListener struct {
 }
 
 // NewRedisListener creates a new RedisListener
-func NewRedisListener() *RedisListener {
+func NewRedisListener() *Listener {
 
 	host := os.Getenv("REDIS_HOST")
 	port := os.Getenv("REDIS_PORT")
 	serverAddr := fmt.Sprintf("%v:%v", host, port)
 
-	var result = RedisListener{}
+	var result = Listener{}
 	result.serverAddr = serverAddr
-	result.subscribers = make(map[string][]OnMessageHandler)
+	result.subscribers = MakeCache()
 	result.healtCheckTimeout = time.Minute * 5
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
 	result.writeTimeout = 10 * time.Second
@@ -57,16 +56,13 @@ func NewRedisListener() *RedisListener {
 }
 
 // Subscribe adds OnMessageHandler for one channel
-func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandler) *RedisListener {
+func (listener *Listener) Subscribe(channel string, handler *OnMessageHandler) *Listener {
 	log.WithFields(log.Fields{
 		"channel": channel,
 	}).Info("Subscribe")
 
-	_, present := listener.subscribers[channel]
-	listener.subscribers[channel] = append(listener.subscribers[channel], handler)
-
-	if !present {
-
+	exists := <-listener.subscribers.Exists(channel)
+	if !exists {
 		log.WithFields(log.Fields{
 			"channel": channel,
 		}).Info("First subscriber to channel")
@@ -81,30 +77,18 @@ func (listener *RedisListener) Subscribe(channel string, handler OnMessageHandle
 		}
 	}
 
+	listener.subscribers.Put(channel, handler)
 	return listener
 }
 
-// UnSubscribe based on the session
-func (listener *RedisListener) UnSubscribeAll(session *melody.Session) *RedisListener {
-
-	for channel := range listener.subscribers {
-		for n, onMessageHandler := range listener.subscribers[channel] {
-			if onMessageHandler.Session == session {
-				log.WithFields(log.Fields{
-					"channel": channel,
-					"session": session,
-				}).Info("UnSubscribeAll found subscription to remove")
-
-				listener.subscribers[channel][n].Session = nil
-			}
-		}
-	}
-
+// UnSubscribeAll based on the session
+func (listener *Listener) UnSubscribeAll(session *melody.Session) *Listener {
+	listener.subscribers.RemoveAll(session)
 	return listener
 }
 
 // SetDebugger change isDebug setting
-func (listener *RedisListener) SetDebugger(isDebug bool) *RedisListener {
+func (listener *Listener) SetDebugger(isDebug bool) *Listener {
 	log.WithFields(log.Fields{
 		"isDebug": isDebug,
 	}).Info("SetDebugger")
@@ -113,20 +97,20 @@ func (listener *RedisListener) SetDebugger(isDebug bool) *RedisListener {
 	return listener
 }
 
-// GetChannels returns the list of subscribed channels
-func (listener *RedisListener) GetChannels() []string {
-	channels := make([]string, len(listener.subscribers))
+// // GetChannels returns the list of subscribed channels
+// func (listener *RedisListener) GetChannels() []string {
+// 	channels := make([]string, len(listener.subscribers))
 
-	i := 0
-	for key := range listener.subscribers {
-		channels[i] = key
-		i++
-	}
-	return channels
-}
+// 	i := 0
+// 	for key := range listener.subscribers {
+// 		channels[i] = key
+// 		i++
+// 	}
+// 	return channels
+// }
 
 // Connect establish the connection to Redis and listen to the subscribed channels
-func (listener *RedisListener) Connect() *RedisListener {
+func (listener *Listener) Connect() *Listener {
 	log.Info("Connecting to REDIS")
 
 	listener.connection, listener.lastError = redis.Dial("tcp", listener.serverAddr,
@@ -160,7 +144,7 @@ func (listener *RedisListener) Connect() *RedisListener {
 	return listener
 }
 
-func listen(listener *RedisListener) {
+func listen(listener *Listener) {
 	log.Info("REDIS listener start")
 
 	for {
@@ -188,20 +172,9 @@ func listen(listener *RedisListener) {
 				}).Debug("onMessage")
 			}
 
-			activeHandlers := make([]OnMessageHandler, 0)
-			for _, onMessageHandler := range listener.subscribers[message.Channel] {
-				// remove inactive
-				if onMessageHandler.Session != nil {
-					onMessageHandler.Handler(onMessageHandler.Session, message.Data)
-					activeHandlers = append(activeHandlers, onMessageHandler)
-				} else {
-					log.WithFields(log.Fields{
-						"channel": message.Channel,
-					}).Info("listen removed handlers")
-				}
+			for onMessageHandler := range listener.subscribers.Get(message.Channel) {
+				onMessageHandler.Handler(onMessageHandler.Session, message.Data)
 			}
-
-			listener.subscribers[message.Channel] = activeHandlers
 
 		case redis.Subscription:
 			var subscription = input.(redis.Subscription)
@@ -217,7 +190,7 @@ func listen(listener *RedisListener) {
 	}
 }
 
-func healhCheck(listener *RedisListener) {
+func healhCheck(listener *Listener) {
 	log.Info("healhCheck")
 
 	ticker := time.NewTicker(listener.healtCheckTimeout)
