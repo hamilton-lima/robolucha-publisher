@@ -1,18 +1,22 @@
-image: node:9.4.0
+image: docker:latest
+services:
+  - docker:dind
 
-stages:
-- build
+variables:
+  NAME: robolucha/publisher:latest
+  CONTAINER_IMAGE: robolucha/publisher:${CI_COMMIT_SHORT_SHA}
+  DOCKER_USER: gitlab
+  LATEST: ${DOCKER_SERVER}/${NAME}
 
-prod:
+build:
   stage: build
   script:
-    - curl --max-time 900 --silent --fail -H "web-hook-token:$PROD" robolucha.com:4295/publisher
-  only:
-    - master
-
-dev:
-  stage: build
-  script:
-    - curl --max-time 900 --silent --fail -H "web-hook-token:$DEV" dev.robolucha.com:4295/dev-publisher
+    - docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD} ${DOCKER_SERVER}
+    - docker build -t ${CONTAINER_IMAGE} . 
+    - docker tag ${CONTAINER_IMAGE} ${CONTAINER_IMAGE}
+    - docker tag ${CONTAINER_IMAGE} ${NAME}
+    - docker tag ${CONTAINER_IMAGE} ${LATEST}
+    - docker push ${LATEST}
+  #     - curl --max-time 900 --silent --fail -H "web-hook-token:$DEV" dev.robolucha.com:4295/dev-docs
   only:
     - development
