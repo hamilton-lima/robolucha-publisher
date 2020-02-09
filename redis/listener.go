@@ -27,6 +27,7 @@ type Listener struct {
 	readTimeout       time.Duration
 	writeTimeout      time.Duration
 	healtCheckTimeout time.Duration
+	recoverTimeout    time.Duration
 	lastError         error
 	isInfo            bool
 	isDebug           bool
@@ -45,6 +46,7 @@ func NewRedisListener() *Listener {
 	result.healtCheckTimeout = time.Minute * 5
 	result.readTimeout = result.healtCheckTimeout + (10 * time.Second)
 	result.writeTimeout = 10 * time.Second
+	result.recoverTimeout = 300 * time.Millisecond
 	result.isInfo = true
 	result.isDebug = false
 
@@ -109,8 +111,8 @@ func (listener *Listener) SetDebugger(isDebug bool) *Listener {
 // 	return channels
 // }
 
-// Connect establish the connection to Redis and listen to the subscribed channels
-func (listener *Listener) Connect() *Listener {
+// Dial establishes connection to Redis
+func (listener *Listener) Dial() {
 	log.Info("Connecting to REDIS")
 
 	listener.connection, listener.lastError = redis.Dial("tcp", listener.serverAddr,
@@ -121,14 +123,17 @@ func (listener *Listener) Connect() *Listener {
 		log.WithFields(log.Fields{
 			"error": listener.lastError,
 		}).Error("Error Connecting to REDIS")
-
-		return listener
 	}
 
 	listener.client = redis.PubSubConn{Conn: listener.connection}
+}
+
+// Connect establish the connection to Redis and listen to the subscribed channels
+func (listener *Listener) Connect() *Listener {
+
+	listener.Dial()
 
 	go func() {
-		// TODO: will allow retries, remove for now
 		for {
 			defer listener.client.Unsubscribe()
 			defer listener.connection.Close()
@@ -137,6 +142,7 @@ func (listener *Listener) Connect() *Listener {
 			listener.wait.Add(1)
 			go listen(listener)
 			go healhCheck(listener)
+			go recover(listener)
 			listener.wait.Wait()
 		}
 	}()
@@ -149,43 +155,48 @@ func listen(listener *Listener) {
 
 	for {
 		log.Debug("Waiting for REDIS")
-		var input interface{} = listener.client.Receive()
 
-		switch input.(type) {
-		case error:
-			log.WithFields(log.Fields{
-				"message": input,
-			}).Info("onError")
+		// no errors keep going
+		if listener.lastError == nil {
+			var input interface{} = listener.client.Receive()
 
-			listener.wait.Done()
-			return
-		case redis.Message:
-			var message = input.(redis.Message)
-
-			if log.IsLevelEnabled(log.DebugLevel) {
-				var data = string(message.Data)
-
+			switch input.(type) {
+			case error:
 				log.WithFields(log.Fields{
-					"channel": message.Channel,
-					"message": data,
-					"length":  len(data),
-				}).Debug("onMessage")
+					"message": input,
+				}).Info("onError")
+				listener.lastError = input.(error)
+				listener.wait.Done()
+				return
+
+			case redis.Message:
+				var message = input.(redis.Message)
+
+				if log.IsLevelEnabled(log.DebugLevel) {
+					var data = string(message.Data)
+
+					log.WithFields(log.Fields{
+						"channel": message.Channel,
+						"message": data,
+						"length":  len(data),
+					}).Debug("onMessage")
+				}
+
+				for onMessageHandler := range listener.subscribers.Get(message.Channel) {
+					onMessageHandler.Handler(onMessageHandler.Session, message.Data)
+				}
+
+			case redis.Subscription:
+				var subscription = input.(redis.Subscription)
+				log.WithFields(log.Fields{
+					"subscription": subscription,
+				}).Debug("subscription")
+
+			default:
+				log.WithFields(log.Fields{
+					"input": input,
+				}).Debug("something else")
 			}
-
-			for onMessageHandler := range listener.subscribers.Get(message.Channel) {
-				onMessageHandler.Handler(onMessageHandler.Session, message.Data)
-			}
-
-		case redis.Subscription:
-			var subscription = input.(redis.Subscription)
-			log.WithFields(log.Fields{
-				"subscription": subscription,
-			}).Debug("subscription")
-
-		default:
-			log.WithFields(log.Fields{
-				"input": input,
-			}).Debug("something else")
 		}
 	}
 }
@@ -196,16 +207,33 @@ func healhCheck(listener *Listener) {
 	ticker := time.NewTicker(listener.healtCheckTimeout)
 	defer ticker.Stop()
 
-	for listener.lastError == nil {
+	for {
 		select {
 		case <-ticker.C:
 			log.Info("healthCheck ping")
 
-			// TODO: implement reconnect
-			var err = listener.client.Ping("")
-			if err != nil {
-				panic(1)
+			if listener.lastError == nil {
+				var err = listener.client.Ping("")
+				if err != nil {
+					// store the error
+					listener.lastError = err
+				}
 			}
+		}
+	}
+}
+
+func recover(listener *Listener) {
+	log.Info("recover")
+
+	ticker := time.NewTicker(listener.recoverTimeout)
+	defer ticker.Stop()
+
+	for listener.lastError != nil {
+		select {
+		case <-ticker.C:
+			log.Info("trying to recover")
+			listener.Dial()
 		}
 	}
 }
