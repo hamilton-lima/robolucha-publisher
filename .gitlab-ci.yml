@@ -1,6 +1,6 @@
 image: docker:latest
 services:
-  - docker:dind
+  - docker:19.03.5-dind
 
 variables:
   NAME: robolucha/publisher:latest
